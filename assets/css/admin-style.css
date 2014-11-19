@@ -1,0 +1,40 @@
+
+ul.Yoast-Toggle {
+
+	position:       fixed;
+	right:          -225px;
+	top:            25px;
+	width:          250px;
+	float:          right;
+	height:         auto;
+	padding-bottom: 2px;
+	z-index:        10;
+}
+
+ul.Yoast-Toggle li {
+	border:        2px solid #999;
+	border-radius: 5px;
+	width:         250px;
+	background:    #FFF;
+	margin:        5px 0;
+	padding:       0;
+}
+
+ul.Yoast-Toggle-Active li {
+	border:        2px solid #0074a2;
+
+}
+
+ul.Yoast-Toggle li, ul.Yoast-Toggle li label {
+	height:      35px;
+	line-height: 35px;
+	float:       left;
+
+}
+
+ul.Yoast-Toggle li label {
+	width:       125px;
+	font-weight: bold;
+	font-size:   14px;
+	margin-left: 5px;
+}
