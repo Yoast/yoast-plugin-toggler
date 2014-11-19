@@ -14,15 +14,9 @@ class Yoast_Plugin_Toggler {
 			'premium' => 'wordpress-seo-premium/wp-seo-premium.php'
 
 		),
-		'hakkie takkie' => array(
-			'free'    => 'andy/andy.php',
-			'premium' => 'hakkietakkie/blaat.php'
-
-		),
 		'google analytics' => array(
 			'free'    => 'google-analytics-for-wordpress/googleanalytics.php',
 			'premium' => 'google-analytics-premium/googleanalytics-premium.php'
-
 		)
 
 	);
@@ -51,6 +45,9 @@ class Yoast_Plugin_Toggler {
 				include_once( ABSPATH . 'wp-admin/includes/plugin.php' );
 			}
 
+			// Apply filters to extends the $this->plugins property
+			$this->plugins = apply_filters('yoast_plugin_toggler_extend', $this->plugins);
+
 			// First check if both versions of plugin do exist
 			$this->check_plugin_versions_available();
 
@@ -66,10 +63,11 @@ class Yoast_Plugin_Toggler {
 	 * Adding the toggle fields to the page
 	 */
 	public function add_toggle() {
+		$nonce = wp_create_nonce( 'yoast-plugin-toggle' );
 
 		echo "<ul class='Yoast-Toggle' >";
 		foreach ( $this->which_is_active AS $plugin => $current_active ) {
-			echo "<li><label>{$plugin}</label> <a href='#' data-plugin='{$plugin}'>{$current_active}</a></li>";
+			echo "<li><label>{$plugin}</label> <a href='#' data-plugin='{$plugin}' data-nonce='{$nonce}'>{$current_active}</a></li>";
 		}
 
 		echo "</ul>";
@@ -95,20 +93,28 @@ class Yoast_Plugin_Toggler {
 	 *
 	 */
 	public function ajax_toggle_plugin_version() {
-		$current_plugin        = filter_input( INPUT_GET, 'plugin' );
-		$version_to_activate   = $this->get_inactive_version( $current_plugin );
-		$version_to_deactivate = $this->which_is_active[ $current_plugin ];
 
-		// First deactivate current version
-		$this->deactivate_plugin_version( $current_plugin, $version_to_deactivate );
+		$response = array();
 
-		$response = array(
-			'activated_version' => $version_to_activate
-		);
+		// If nonce is valid
+		if ( $this->verify_nonce() ) {
+			$current_plugin        = filter_input( INPUT_GET, 'plugin' );
+			$version_to_activate   = $this->get_inactive_version( $current_plugin );
+			$version_to_deactivate = $this->which_is_active[$current_plugin];
+
+			// First deactivate current version
+			$this->deactivate_plugin_version( $current_plugin, $version_to_deactivate );
+
+			$response = array(
+				'activated_version' => $version_to_activate
+			);
+		}
 
 		echo json_encode( $response );
 		die();
 	}
+
+//wp_verify_nonce( $_REQUEST['my_nonce'], 'process-comment'.$comment_id );
 
 	/**
 	 * This ajax version has to be done, because of preventing conflicts between plugins.
@@ -117,10 +123,13 @@ class Yoast_Plugin_Toggler {
 	 *
 	 */
 	public function ajax_activate_toggled_version() {
-		$current_plugin      = filter_input( INPUT_GET, 'plugin' );
-		$version_to_activate = filter_input( INPUT_GET, 'activated_version' );
 
-		$this->activate_plugin_version( $current_plugin, $version_to_activate );
+		if ( $this->verify_nonce() ) {
+			$current_plugin      = filter_input( INPUT_GET, 'plugin' );
+			$version_to_activate = filter_input( INPUT_GET, 'activated_version' );
+
+			$this->activate_plugin_version( $current_plugin, $version_to_activate );
+		}
 
 		echo 1;
 		die();
@@ -150,7 +159,7 @@ class Yoast_Plugin_Toggler {
 				$full_plugin_path = ABSPATH . 'wp-content/plugins/' . plugin_basename( $plugin_path );
 
 				if ( ! file_exists( $full_plugin_path ) ) {
-					unset($this->plugins[$plugin]);
+					unset( $this->plugins[$plugin] );
 					break;
 				}
 			}
@@ -243,6 +252,21 @@ class Yoast_Plugin_Toggler {
 
 		// Disable plugin
 		deactivate_plugins( plugin_basename( $plugin_to_disable ), true );
+	}
+
+	/**
+	 * Verify the set nonce with the posted one
+	 *
+	 * @return bool
+	 */
+	private function verify_nonce() {
+		// Get the nonce value
+		$ajax_nonce = filter_input( INPUT_GET, 'ajax_nonce' );
+
+		// If nonce is valid return true
+		if ( wp_verify_nonce( $ajax_nonce, 'yoast-plugin-toggle' ) ) {
+			return true;
+		}
 	}
 
 }
