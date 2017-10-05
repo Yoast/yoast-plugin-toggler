@@ -2,23 +2,12 @@
 
 class Yoast_Plugin_Toggler {
 
-	/**
-	 * The plugins to compare
-	 *
-	 * @var array
-	 */
+	/** @var array The plugins to compare */
 	private $plugins = array(
-
-		'wordpress seo'    => array(
-			'free'    => 'wordpress-seo/wp-seo.php',
-			'premium' => 'wordpress-seo-premium/wp-seo-premium.php'
-
-		),
-		'google analytics' => array(
-			'free'    => 'google-analytics-for-wordpress/googleanalytics.php',
-			'premium' => 'google-analytics-premium/googleanalytics-premium.php'
+		'Yoast SEO' => array(
+			'Free'    => 'wordpress-seo/wp-seo.php',
+			'Premium' => 'wordpress-seo-premium/wp-seo-premium.php'
 		)
-
 	);
 
 	private $which_is_active = array();
@@ -38,25 +27,26 @@ class Yoast_Plugin_Toggler {
 	 *
 	 */
 	public function init() {
-		if ( $this->has_rights() ) {
-
-			// Load core plugin.php if not exists
-			if ( ! function_exists( 'is_plugin_active' ) ) {
-				include_once( ABSPATH . 'wp-admin/includes/plugin.php' );
-			}
-
-			// Apply filters to extends the $this->plugins property
-			$this->plugins = apply_filters('yoast_plugin_toggler_extend', $this->plugins);
-
-			// First check if both versions of plugin do exist
-			$this->check_plugin_versions_available();
-
-			// Check which version is active
-			$this->check_which_is_active();
-
-			// Adding the hooks
-			$this->add_hooks();
+		if ( ! $this->has_rights() ) {
+			return;
 		}
+
+		// Load core plugin.php if not exists
+		if ( ! function_exists( 'is_plugin_active' ) ) {
+			include_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+
+		// Apply filters to extends the $this->plugins property
+		$this->plugins = apply_filters( 'yoast_plugin_toggler_extend', $this->plugins );
+
+		// First check if both versions of plugin do exist
+		$this->check_plugin_versions_available();
+
+		// Check which version is active
+		$this->check_which_is_active();
+
+		// Adding the hooks
+		$this->add_hooks();
 	}
 
 	/**
@@ -65,12 +55,29 @@ class Yoast_Plugin_Toggler {
 	public function add_toggle() {
 		$nonce = wp_create_nonce( 'yoast-plugin-toggle' );
 
-		echo "<ul class='Yoast-Toggle' >";
-		foreach ( $this->which_is_active AS $plugin => $current_active ) {
-			echo "<li><label>{$plugin}</label> <a href='#' data-plugin='{$plugin}' data-nonce='{$nonce}'>{$current_active}</a></li>";
-		}
+		/** \WP_Admin_Bar $wp_admin_bar */
+		global $wp_admin_bar;
 
-		echo "</ul>";
+		foreach ( $this->which_is_active as $label => $version ) {
+			$menu_id = 'wpseo-plugin-toggler-' . sanitize_title( $label );
+			$wp_admin_bar->add_menu( array(
+				'id'    => $menu_id,
+				'title' => $label . ': ' . $version,
+				'href'  => '#',
+			) );
+
+			foreach ( $this->plugins[ $label ] as $switch_version => $data ) {
+				if ( $switch_version !== $version ) {
+					$wp_admin_bar->add_menu( array(
+						'parent' => $menu_id,
+						'id'     => 'wpseo-plugin-toggle-' . sanitize_title( $label ),
+						'title'  => 'Switch to ' . $switch_version,
+						'href'   => '#',
+						'meta'   => array( 'onclick' => 'Yoast_Plugin_Toggler.toggle_plugin( "' . $label . '", "' . $nonce . '")' )
+					) );
+				}
+			}
+		}
 	}
 
 	/**
@@ -79,10 +86,7 @@ class Yoast_Plugin_Toggler {
 	 */
 	public function add_assets() {
 		// JS file
-		wp_enqueue_script( 'yoast-toggle-script', plugin_dir_url( ToggleFile ) . 'assets/js/yoast-toggle.js' );
-
-		// CSS file
-		wp_enqueue_style( 'yoast-toggle-style', plugin_dir_url( ToggleFile ) . 'assets/css/yoast-toggle.css' );
+		wp_enqueue_script( 'yoast-toggle-script', plugin_dir_url( YOAST_PLUGIN_TOGGLE_FILE ) . 'assets/js/yoast-toggle.js' );
 	}
 
 	/**
@@ -100,10 +104,11 @@ class Yoast_Plugin_Toggler {
 		if ( $this->verify_nonce() ) {
 			$current_plugin        = filter_input( INPUT_GET, 'plugin' );
 			$version_to_activate   = $this->get_inactive_version( $current_plugin );
-			$version_to_deactivate = $this->which_is_active[$current_plugin];
+			$version_to_deactivate = $this->which_is_active[ $current_plugin ];
 
 			// First deactivate current version
 			$this->deactivate_plugin_version( $current_plugin, $version_to_deactivate );
+			$this->activate_plugin_version( $current_plugin, $version_to_activate );
 
 			$response = array(
 				'activated_version' => $version_to_activate
@@ -113,28 +118,6 @@ class Yoast_Plugin_Toggler {
 		echo json_encode( $response );
 		die();
 	}
-
-//wp_verify_nonce( $_REQUEST['my_nonce'], 'process-comment'.$comment_id );
-
-	/**
-	 * This ajax version has to be done, because of preventing conflicts between plugins.
-	 * When deactivating plugin it's code is still active, because of a refresh that isn't done.
-	 * To solve this issue, we will do another request, just to activate the plugin
-	 *
-	 */
-	public function ajax_activate_toggled_version() {
-
-		if ( $this->verify_nonce() ) {
-			$current_plugin      = filter_input( INPUT_GET, 'plugin' );
-			$version_to_activate = filter_input( INPUT_GET, 'activated_version' );
-
-			$this->activate_plugin_version( $current_plugin, $version_to_activate );
-		}
-
-		echo 1;
-		die();
-	}
-
 
 	/**
 	 * Check if there are enough rights to display the toggle
@@ -159,7 +142,7 @@ class Yoast_Plugin_Toggler {
 				$full_plugin_path = ABSPATH . 'wp-content/plugins/' . plugin_basename( $plugin_path );
 
 				if ( ! file_exists( $full_plugin_path ) ) {
-					unset( $this->plugins[$plugin] );
+					unset( $this->plugins[ $plugin ] );
 					break;
 				}
 			}
@@ -190,7 +173,7 @@ class Yoast_Plugin_Toggler {
 	 * @param string $version
 	 */
 	private function add_active_plugin( $plugin, $version ) {
-		$this->which_is_active[$plugin] = $version;
+		$this->which_is_active[ $plugin ] = $version;
 	}
 
 
@@ -202,13 +185,10 @@ class Yoast_Plugin_Toggler {
 		// Setting AJAX-request for toggle between version
 		add_action( 'wp_ajax_toggle_version', array( $this, 'ajax_toggle_plugin_version' ) );
 
-		add_action( 'wp_ajax_activate_toggled_version', array( $this, 'ajax_activate_toggled_version' ) );
-
 		// Adding assets
 		add_action( 'admin_init', array( $this, 'add_assets' ) );
 
-		// Adding toggler to DOM
-		add_action( 'admin_footer', array( $this, 'add_toggle' ) );
+		add_action( 'admin_bar_menu', array( $this, 'add_toggle' ), 100 );
 	}
 
 	/**
@@ -218,7 +198,7 @@ class Yoast_Plugin_Toggler {
 	 * @param string $version
 	 */
 	private function activate_plugin_version( $plugin, $version ) {
-		$plugin_to_enable = $this->plugins[$plugin][$version];
+		$plugin_to_enable = $this->plugins[ $plugin ][ $version ];
 
 		// Activate plugin
 		activate_plugin( plugin_basename( $plugin_to_enable ), null, false, true );
@@ -232,8 +212,8 @@ class Yoast_Plugin_Toggler {
 	 * @return int|string
 	 */
 	private function get_inactive_version( $plugin ) {
-		foreach ( $this->plugins[$plugin] AS $version => $plugin_path ) {
-			if ( $this->which_is_active[$plugin] !== $version ) {
+		foreach ( $this->plugins[ $plugin ] AS $version => $plugin_path ) {
+			if ( $this->which_is_active[ $plugin ] !== $version ) {
 				return $version;
 			}
 		}
@@ -248,7 +228,7 @@ class Yoast_Plugin_Toggler {
 	 * @param string $version [free or premium]
 	 */
 	private function deactivate_plugin_version( $plugin, $version ) {
-		$plugin_to_disable = $this->plugins[$plugin][$version];
+		$plugin_to_disable = $this->plugins[ $plugin ][ $version ];
 
 		// Disable plugin
 		deactivate_plugins( plugin_basename( $plugin_to_disable ), true );
