@@ -3,12 +3,10 @@
 class Yoast_Plugin_Toggler {
 
 	/** @var array The plugins to compare */
-	private $plugins = array(
-		'Yoast SEO' => array(
-			'Free'    => 'wordpress-seo/wp-seo.php',
-			'Premium' => 'wordpress-seo-premium/wp-seo-premium.php'
-		)
-	);
+	private $plugins = array();
+
+	/** @var string Regex with 2 groups to filter the plugins by name */
+	private $grouped_name_filter = '/^Yoast SEO([ \d.]*$)|^Yoast SEO Premium([ \d.]*$)/';
 
 	private $which_is_active = array();
 
@@ -32,11 +30,19 @@ class Yoast_Plugin_Toggler {
 		}
 
 		// Load core plugin.php if not exists
-		if ( ! function_exists( 'is_plugin_active' ) ) {
+		if ( ! function_exists( 'is_plugin_active' ) ||
+			 ! function_exists( 'get_plugins' )
+		) {
 			include_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 
-		// Apply filters to extends the $this->plugins property
+		// Apply filters to adapt the $this->grouped_name_filter property
+		$this->grouped_name_filter = apply_filters( 'yoast_plugin_toggler_filter', $this->grouped_name_filter );
+
+		// Find the plugins.
+		$this->plugins = $this->get_filtered_plugin_groups( $this->grouped_name_filter );
+
+		// Apply filters to extend the $this->plugins property
 		$this->plugins = apply_filters( 'yoast_plugin_toggler_extend', $this->plugins );
 
 		// First check if both versions of plugin do exist
@@ -62,7 +68,7 @@ class Yoast_Plugin_Toggler {
 			$menu_id = 'wpseo-plugin-toggler-' . sanitize_title( $label );
 			$wp_admin_bar->add_menu( array(
 				'id'    => $menu_id,
-				'title' => $label . ': ' . $version,
+				'title' => $label === "" ? $version : $label . ': ' . $version,
 				'href'  => '#',
 			) );
 
@@ -128,6 +134,47 @@ class Yoast_Plugin_Toggler {
 	 */
 	private function has_rights() {
 		return ( is_admin() && current_user_can( 'activate_plugins' ) );
+	}
+
+	/**
+	 * Check the plugins directory and retrieve plugins that match the filter.
+	 *
+	 * Example:
+	 * $grouped_name_filter = '/^Yoast SEO([ \d.]*$)|^Yoast SEO Premium([ \d.]*$)/'
+	 * $plugins = array(
+	 * 	'' => array(
+	 * 		'Yoast SEO'         => 'wordpress-seo/wp-seo.php',
+	 * 		'Yoast SEO Premium' => 'wordpress-seo-premium/wp-seo-premium.php',
+	 * 	),
+	 * );
+	 *
+	 * @param string $grouped_name_filter Regex to filter on the plugin data name.
+	 *                                    This has to include 2 groups to match the keys.
+	 *
+	 * @return array The plugins grouped by matching filter 1 & 2.
+	 */
+	function get_filtered_plugin_groups( $grouped_name_filter ) {
+		$all_plugins = get_plugins();
+		$plugins = array();
+
+		foreach ( $all_plugins as $file => $data ) {
+			$matches = array();
+			$name = $data[ 'Name' ];
+			if ( preg_match( $grouped_name_filter, $name, $matches ) ) {
+				$group = '';
+				if ( isset( $matches[2] ) && $matches[2] !== "" ) {
+					$group = $matches[2];
+				} elseif ( isset( $matches[1] ) && $matches[1] !== "" ) {
+					$group = $matches[1];
+				}
+				if ( ! isset( $plugins[ $group ] ) ) {
+					$plugins[ $group ] = array();
+				}
+				$plugins[ $group ][ $name ] = $file;
+			}
+		}
+
+		return $plugins;
 	}
 
 	/**
